@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ROPE RUNNERS 2 - The Miasma Worm</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#06121c; --panel:#0b2233; --border:#ffb02e;
+    --amber:#ffb02e; --teal:#2de2c8; --pink:#ff6fa8; --blue:#5aa8ff;
+    --red:#ff5252; --lime:#b8f04a; --text:#fff4de;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:'Press Start 2P', monospace;overflow:hidden;image-rendering:pixelated;}
+  #maze{position:fixed;inset:0;z-index:0;opacity:.35;
+    background:
+      linear-gradient(var(--blue) 2px, transparent 2px) 0 0/72px 72px,
+      linear-gradient(90deg, var(--blue) 2px, transparent 2px) 0 0/72px 72px;
+    -webkit-mask-image:radial-gradient(circle at 50% 50%, transparent 38%, #000 100%);
+            mask-image:radial-gradient(circle at 50% 50%, transparent 38%, #000 100%);
+    animation:drift 6s infinite steps(2);}
+  @keyframes drift{50%{opacity:.2;}}
+  #scanlines{position:fixed;inset:0;z-index:5;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.14) 3px,rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply;}
+  #vignette{position:fixed;inset:0;z-index:6;pointer-events:none;box-shadow:inset 0 0 12vw 4vw rgba(0,0,0,.65);}
+
+  /* Fixed design canvas, scaled by JS to always fit the window. Nothing can be cut off. */
+  #fit{position:absolute;left:50%;top:50%;width:1000px;height:760px;z-index:2;
+    transform-origin:center center;transform:translate(-50%,-50%) scale(var(--s,1));}
+  .hud{height:30px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--teal);letter-spacing:1px;padding:0 10px;}
+  .hud .pel{color:var(--amber);} .hud .pel b{color:var(--text);font-weight:normal;}
+
+  .screen{width:1000px;height:650px;background:var(--panel);border:4px solid var(--border);border-radius:6px;
+    box-shadow:0 0 0 4px #03090f, 0 0 24px rgba(255,176,46,.35);position:relative;display:flex;flex-direction:column;overflow:hidden;}
+  .page{display:none;height:100%;flex-direction:column;}
+  .page.active{display:flex;}
+
+  .level-title{text-align:center;font-size:17px;color:var(--amber);padding:10px 8px 9px;text-shadow:2px 2px 0 #000;border-bottom:3px dashed rgba(255,176,46,.4);letter-spacing:1px;}
+  .level-title small{display:block;font-size:11px;color:var(--teal);margin-top:7px;line-height:1.5;}
+
+  .stage{flex:1;position:relative;padding:12px 18px;display:flex;flex-direction:column;justify-content:space-between;gap:8px;overflow:hidden;}
+  .bg-a{background:linear-gradient(#0e2c44,#0a1c2e 60%,#0e2840);}
+  .bg-b{background:linear-gradient(#1c1a3e,#120f2a 60%,#181436);}
+  .bg-c{background:linear-gradient(#0c2e2c,#09201f 60%,#0b2a28);}
+  .bg-d{background:linear-gradient(#3a2608,#24170a 60%,#1a1007);}
+  .bg-e{background:linear-gradient(#3a0f1c,#200a12 60%,#170810);}
+  .bg-f{background:linear-gradient(#10101c,#08080f 60%,#0b0b16);}
+  .bg-g{background:linear-gradient(#0d2a1a,#0a1f14 60%,#0a1a12);}
+  .bg-title{background:radial-gradient(circle at 50% 30%, #123a5a, #04101a 70%);}
+  .bg-end{background:radial-gradient(circle at 50% 30%, #14402e, #04100a 70%);}
+
+  .props{position:absolute;inset:0;pointer-events:none;z-index:1;display:flex;align-items:center;justify-content:center;font-size:44px;opacity:.12;}
+
+  .actors{display:flex;align-items:flex-end;justify-content:center;gap:34px;position:relative;z-index:2;height:112px;}
+  .actor{display:flex;flex-direction:column;align-items:center;position:relative;}
+  .actor .label{margin-top:6px;font-size:9px;color:var(--amber);background:#000;padding:3px 6px;border:1px solid var(--amber);text-align:center;line-height:1.4;}
+  .actor .badge{position:absolute;top:-12px;right:-16px;font-size:16px;}
+
+  .spr{display:grid;}
+  .spr i{display:block;background:transparent;}
+  .spr.bob{animation:bob 1.2s infinite steps(2);}
+  .spr.shake{animation:shake .35s infinite steps(2);}
+  .spr.fade{animation:fade 1.6s infinite steps(4);}
+  @keyframes bob{50%{transform:translateY(-4px);}}
+  @keyframes shake{0%{transform:translate(0,0);}25%{transform:translate(2px,-2px);}50%{transform:translate(-2px,1px);filter:hue-rotate(20deg);}75%{transform:translate(1px,2px);}}
+  @keyframes fade{50%{opacity:.35;}}
+
+  .bubbles-row{display:flex;justify-content:center;gap:22px;position:relative;z-index:2;}
+  .bubble{position:relative;background:#fff4de;color:#111;font-size:11px;line-height:1.7;padding:10px 12px;border:3px solid #111;border-radius:4px;width:440px;box-shadow:3px 3px 0 rgba(0,0,0,.5);}
+  .bubble.warn{background:#d9fff6;border-color:#07685a;}
+  .bubble.alarm{background:#ffd6d6;border-color:#8b0000;color:#5c0000;}
+  .bubble.evil{background:#2a0e22;border-color:var(--pink);color:#ffd2e6;}
+  code{font-family:'Press Start 2P',monospace;color:var(--lime);background:#000;padding:1px 4px;font-size:.9em;}
+  .evil code,.alarm code{color:#ffe08a;}
+
+  /* three-box strip: what / how / what slipped through */
+  .info{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:10px;position:relative;z-index:2;}
+  .ib{background:#000;border:2px solid var(--blue);border-radius:3px;padding:8px 10px;font-size:10px;line-height:1.65;color:#e6f4ff;box-shadow:2px 2px 0 #000;}
+  .ib h5{margin:0 0 5px;font-size:10px;font-weight:normal;letter-spacing:1px;color:var(--teal);}
+  .ib.stolen{border-color:var(--pink);} .ib.stolen h5{color:var(--pink);}
+  .ib.slip{border-color:var(--red);} .ib.slip h5{color:var(--red);}
+  .ib .t{margin-top:5px;}
+  .ib .t b{font-weight:normal;font-size:9px;letter-spacing:1px;margin-right:4px;}
+  .t.unmit b{color:var(--red);} .t.unprev b{color:var(--amber);} .t.undet b{color:var(--pink);}
+
+  .caption{background:#000;border-top:3px solid var(--amber);padding:9px 16px;font-size:11px;color:#ffeccc;line-height:1.75;text-align:center;}
+  .caption b{color:var(--teal);} .caption .danger{color:var(--red);}
+
+  /* flow (level 4) */
+  .flow{display:flex;align-items:center;justify-content:center;gap:12px;position:relative;z-index:2;height:112px;}
+  .step{background:#000;border:2px solid var(--amber);padding:8px 10px;font-size:10px;line-height:1.6;text-align:center;width:215px;border-radius:3px;}
+  .step b{display:block;color:var(--amber);font-weight:normal;font-size:11px;margin-bottom:3px;}
+  .arrow{color:var(--amber);font-size:20px;}
+
+  .title-screen,.end-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px;text-align:center;padding:18px;}
+  .title-screen h1{font-size:30px;color:var(--amber);text-shadow:3px 3px 0 #000,0 0 18px var(--amber);margin:0;letter-spacing:2px;line-height:1.3;}
+  .title-screen h2{font-size:13px;color:var(--teal);margin:0;line-height:1.7;}
+  .blink{animation:blinker 1s step-start infinite;color:var(--lime);font-size:12px;}
+  @keyframes blinker{50%{opacity:0;}}
+  .row{display:flex;gap:18px;align-items:center;justify-content:center;}
+
+  .list{list-style:none;padding:0;margin:0;text-align:left;font-size:10px;display:flex;flex-direction:column;gap:7px;width:920px;}
+  .list li{display:flex;gap:10px;align-items:center;background:#06180f;border:2px solid var(--lime);padding:6px 10px;border-radius:3px;line-height:1.6;}
+  .list.maze li{background:#14080f;border-color:var(--pink);}
+  .list.maze li b{color:var(--amber);font-weight:normal;}
+  .list.sources li{background:#08141f;border-color:var(--blue);}
+  .list li .ico{font-size:16px;flex-shrink:0;}
+
+  .thread{display:grid;grid-template-columns:150px 1fr 1fr;gap:6px 8px;width:930px;font-size:10px;line-height:1.55;}
+  .thread div{background:#000;border:2px solid var(--blue);padding:6px 8px;border-radius:3px;}
+  .thread .h{background:transparent;border:none;color:var(--teal);font-size:10px;padding:2px 4px;}
+  .thread .lv{border-color:var(--amber);color:var(--amber);}
+  .thread .st{border-color:var(--pink);color:#ffd2e6;}
+
+  .power{display:flex;gap:14px;justify-content:center;width:930px;}
+  .power div{flex:1 1 0;background:#06180f;border:3px solid var(--lime);padding:11px;font-size:10px;line-height:1.75;text-align:left;border-radius:4px;}
+  .power div b{display:block;color:var(--amber);font-size:11px;margin-bottom:6px;font-weight:normal;}
+  .power div span{display:block;color:var(--teal);margin-top:6px;}
+
+  .nav{height:70px;display:flex;justify-content:space-between;align-items:center;padding:0 4px;}
+  .nav button{font-family:'Press Start 2P',monospace;background:var(--panel);color:var(--amber);border:3px solid var(--amber);padding:11px 15px;font-size:12px;cursor:pointer;border-radius:4px;box-shadow:2px 2px 0 #000;}
+  .nav button:hover{background:var(--amber);color:#2a1800;}
+  .nav button:disabled{opacity:.3;cursor:default;background:var(--panel);color:var(--amber);}
+  .dots{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:380px;}
+  .dot{width:10px;height:10px;border:2px solid var(--amber);background:transparent;border-radius:1px;cursor:pointer;}
+  .dot.active{background:var(--amber);}
+</style>
+</head>
+<body>
+<div id="maze"></div>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="fit">
+  <div class="hud">
+    <div>ROPE RUNNERS 2</div>
+    <div class="pel"><span id="hud-label">LEVEL</span>: <b id="hud-val">--</b></div>
+  </div>
+  <div class="screen" id="screen"></div>
+  <div class="nav">
+    <button id="prev">◀ PREV</button>
+    <div class="dots" id="dots"></div>
+    <button id="next">NEXT LEVEL ▶</button>
+  </div>
+</div>
+
+<script>
+/* ---------- sprites ---------- */
+const GHOST = ["0001111000","0111111110","1122112211","1123112311","1122112211","1111111111","1111111111","1111111111","1101111011","1000110001"];
+const CHOMP_OPEN = ["0011111100","0111111110","1111121110","1111111000","1111100000","1111100000","1111111000","1111111110","0111111110","0011111100"];
+const CHOMP_SHUT = ["0011111100","0111111110","1111121111","1111111111","1111111111","1111111111","1111111111","1111111111","0111111110","0011111100"];
+const PKG = ["0111111110","1222222221","1222222221","1111111111","1333333331","1333333331","1333333331","1333333331","1333333331","0111111110"];
+const SHIELD = ["1111111111","1222222221","1222112221","1221111221","1221111221","0122112210","0122222210","0012222100","0001221000","0000110000"];
+const KEY = ["0001111000","0011001100","0011001100","0001111000","0000110000","0000110000","0000111000","0000110000","0000111000","0000110000"];
+const SPRITES = {ghost:GHOST, chomp:CHOMP_OPEN, pkg:PKG, shield:SHIELD, key:KEY};
+
+function renderSprite(el){
+  const name = el.dataset.s, grid = (SPRITES[name]||GHOST);
+  const px = +(el.dataset.px||5), c1 = el.dataset.c||'#ffb02e', c3 = el.dataset.c3||'#06121c';
+  const pal = {1:c1, 2:'#ffffff', 3:c3};
+  if(name==='pkg') {pal[2]='#c58a4a'; pal[3]='#e8b878';}
+  if(name==='shield'){pal[1]=c1; pal[2]=el.dataset.c2||'#2de2c8';}
+  el.className += ' spr';
+  el.style.gridTemplateColumns = `repeat(${grid[0].length}, ${px}px)`;
+  el.style.gridTemplateRows = `repeat(${grid.length}, ${px}px)`;
+  el.innerHTML='';
+  grid.forEach(row=>[...row].forEach(ch=>{
+    const i=document.createElement('i');
+    i.style.width=i.style.height=px+'px';
+    if(ch!=='0') i.style.background = pal[ch]||c1;
+    el.appendChild(i);
+  }));
+}
+function sprite(name,color,opts={}){
+  const px=opts.px||5, cls=opts.cls||'';
+  return `<div class="${cls}" data-s="${name}" data-c="${color}" data-px="${px}" ${opts.c2?`data-c2="${opts.c2}"`:''}></div>`;
+}
+function actor(name,color,label,badge,opts){
+  return `<div class="actor">${sprite(name,color,opts)}${badge?`<span class="badge">${badge}</span>`:''}<div class="label">${label}</div></div>`;
+}
+const WORM = () => actor('chomp','#ffb02e','MIASMA<br>WORM','🪢',{px:7,cls:'chomper shake'});
+
+const TAG = {unmit:'UNMITIGATED', unprev:'UNPREVENTED', undet:'UNDETECTED'};
+function slip(list){ return list.map(g=>`<div class="t ${g[0]}"><b>${TAG[g[0]]}</b>${g[1]}</div>`).join(''); }
+function info(a,b,c){
+  return `<div class="info">
+    <div class="ib stolen"><h5>${a[0]}</h5>${a[1]}</div>
+    <div class="ib"><h5>${b[0]}</h5>${b[1]}</div>
+    <div class="ib slip"><h5>${c[0]}</h5>${c[1]}</div></div>`;
+}
+
+const P = [];
+function level(n, title, sub, bg, props, bubbles, actors, infoHtml, caption){
+  const b = bubbles.map(x=>`<div class="bubble ${x[0]}">${x[1]}</div>`).join('');
+  return `<div class="level-title">${n}: ${title}<small>${sub}</small></div>
+  <div class="stage ${bg}"><div class="props">${props}</div>
+    <div class="bubbles-row">${b}</div>
+    <div class="actors">${actors}</div>
+    ${infoHtml}</div>
+  <div class="caption">${caption}</div>`;
+}
+
+/* TITLE */
+P.push({hud:['LEVEL','--'], cls:'bg-title', html:`
+  <div class="title-screen">
+    <div class="row">
+      ${sprite('chomp','#ffb02e',{px:9,cls:'chomper bob'})}
+      <span style="font-size:22px;color:var(--amber);letter-spacing:8px">• • • ●</span>
+      ${sprite('ghost','#2de2c8',{px:7,cls:'bob'})}
+      ${sprite('ghost','#ff6fa8',{px:7,cls:'bob'})}
+    </div>
+    <h1>ROPE<br>RUNNERS 2</h1>
+    <h2>How the Miasma worm ate its way into<br>Microsoft's GitHub, in 6 levels</h2>
+    <p style="font-size:11px;color:#9be8ff;max-width:700px;line-height:1.9;margin:0;">Every level starts the same way:<br>an identity got stolen, or trusted too much.</p>
+    <div class="blink">PRESS "NEXT LEVEL" TO START ▶</div>
+  </div>`});
+
+/* L1 */
+P.push({hud:['LEVEL','1/6'], html: level('LEVEL 1','THE STOLEN COOKIE','PHASE 1: CREDENTIAL THEFT (APR TO MAY 2026)','bg-a','🍪🕵️🍪',
+  [['',`I logged in with MFA. I'm safe, right?`],
+   ['evil',`Malware on your laptop copied your <b>login cookie</b>. MFA is already done. I just replay it.`]],
+  actor('ghost','#2de2c8','RED HAT<br>EMPLOYEE','🧑‍💻',{px:5,cls:'bob'}) + actor('key','#ffb02e','SESSION<br>COOKIE','🍪',{px:5,cls:'bob'}) + WORM(),
+  info(['WHAT WAS STOLEN',`A Red Hat employee's GitHub login session (a cookie).`],
+       ['HOW',`<b>Infostealer</b> malware on their device. The stolen login sat in criminal logs for about 7 weeks.`],
+       ['WHAT SLIPPED THROUGH',slip([['unmit','Stolen session kept working'],['undet','Malware went unnoticed']])]),
+  `A valid session cookie needs <b>no password and no MFA</b>.`)});
+
+/* L2 */
+P.push({hud:['LEVEL','2/6'], html: level('LEVEL 2','THE FAKE RECEIPT','PHASE 2: PUBLISHING ABUSE (29 MAY TO 3 JUN 2026)','bg-b','📦✅📦',
+  [['',`Our packages carry a <b>signed receipt</b>: "built by the real pipeline". Customers can trust them.`],
+   ['evil',`The receipt says <b>who built it</b>, not that the code is clean. I used your real build identity.`]],
+  actor('pkg','#b8f04a','NPM<br>PACKAGES','📦',{px:5,cls:'bob'}) + actor('ghost','#2de2c8','BUILD<br>PIPELINE','🏭',{px:5,cls:'bob'}) + WORM(),
+  info(['WHAT WAS STOLEN',`Publishing rights to <b>32</b> Red Hat npm packages (90+ versions), then 57 more on 3 June.`],
+       ['HOW',`The worm abused GitHub's <b>passwordless trusted publishing</b>. Bad packages got a genuine signed receipt.`],
+       ['WHAT SLIPPED THROUGH',slip([['undet','Bad packages looked legitimate'],['unprev','Build identity trusted by default']])]),
+  `Receipt = <b>built by the real pipeline</b>. It does not mean the code is safe.`)});
+
+/* L3 */
+P.push({hud:['LEVEL','3/6'], html: level('LEVEL 3','THE BOOBY-TRAPPED REPO','PHASE 3: THE MICROSOFT COMPROMISE (5 JUN 2026)','bg-e','🤖📂🤖',
+  [['',`I opened the repo in my AI coding tool. Normal day.`],
+   ['evil',`A stolen token had planted hidden config files (<code>.claude</code> <code>.gemini</code> <code>.vscode</code>). The tool <b>runs them the moment you open the folder</b>.`]],
+  actor('ghost','#2de2c8','DEVELOPER','🧑‍💻',{px:5,cls:'bob'}) + actor('pkg','#b8f04a','AI CODING<br>TOOL','🤖',{px:5,cls:'shake'}) + WORM(),
+  info(['WHAT WAS STOLEN',`A <b>static GitHub token (PAT)</b> from a previously breached Microsoft contributor.`],
+       ['HOW',`Pushed a commit <b>backdated to 2020</b> to Azure/durabletask, adding config files that auto-run a script.`],
+       ['WHAT SLIPPED THROUGH',slip([['unmit','Token never expired'],['undet','Backdated commit not caught'],['unprev','Tools auto-run repo config']])]),
+  `Opening the folder = running the attacker's code <b>with the developer's own access</b>.`)});
+
+/* L4 */
+P.push({hud:['LEVEL','4/6'], html: level('LEVEL 4','THE HARVEST','PHASE 4: SEARCH THE MACHINE, SEND IT OUT','bg-d','☁️🔐☁️',
+  [['evil',`I'm running on a real machine now. I'll find every secret it can reach.`],
+   ['evil',`Then I send them to my own repos, and use the stolen tokens to <b>spread to the next victim</b>.`]],
+  `<div class="flow">
+     <div class="step"><b>1 RUN</b>Planted config launches the script</div><div class="arrow">▶</div>
+     <div class="step"><b>2 SEARCH</b>Scans files and environment for secrets</div><div class="arrow">▶</div>
+     <div class="step"><b>3 SEND</b>Uploads them to attacker-made public GitHub repos</div>
+   </div>`,
+  info(['WHAT WAS STOLEN',`Cloud keys (AWS, Azure, GCP), Kubernetes, Vault, npm and GitHub tokens, SSH keys.`],
+       ['HOW',`Everything the developer's account could read on that machine. Sent to an attacker-controlled destination.`],
+       ['WHAT SLIPPED THROUGH',slip([['unmit','Long-lived secrets lying around'],['undet','Stolen identities used with no alarm']])]),
+  `If a key works for <b>anyone who holds it</b>, it works for the thief too.`)});
+
+/* L5 */
+P.push({hud:['LEVEL','5/6'], html: level('LEVEL 5','105 SECONDS','PHASE 5: CONTAINMENT (5 JUN 2026, 16:00 UTC)','bg-f','🚨🔦🚨',
+  [['alarm',`GitHub's automated detection <b>disabled 73 repos</b> across 4 Microsoft orgs.`],
+   ['warn',`Which identity did this? What else can it reach? <b>Nobody could answer quickly.</b>`]],
+  actor('ghost','#555a66','AZURE<br>REPOS','🔒',{px:5,cls:'fade'}) + actor('ghost','#555a66','FUNCTIONS<br>ACTION','🔒',{px:5,cls:'fade'}) + actor('ghost','#ff6fa8','STOLEN<br>IDENTITY?','❓',{px:5,cls:'bob'}),
+  info(['WHAT HAPPENED',`Wave 1: 39 repos at 16:00:50. Wave 2: 34 repos at 16:02:35 UTC. About <b>105 seconds</b> end to end.`],
+       ['THE IMPACT',`Azure Functions host, language workers and deploy actions went dark. CI/CD broke downstream.`],
+       ['WHAT SLIPPED THROUGH',slip([['undet','The platform caught it, not the victim'],['unmit','No single place to see and revoke the identity']])]),
+  `Containment was <b>per repository</b>, not per identity.`)});
+
+/* L6 */
+P.push({hud:['LEVEL','6/6'], html: level('LEVEL 6','THE RECIPE GOES PUBLIC','PHASE 6: AFTERMATH (7 TO 9 JUN 2026)','bg-g','📢💾📢',
+  [['warn',`7 June: a second wave, "Hades", hits <b>PyPI</b> (Python packages).`],
+   ['evil',`9 June: someone posts what is <b>claimed to be the full worm code</b> online. Anyone can copy it.`]],
+  actor('pkg','#b8f04a','HADES<br>WAVE','🐍',{px:5,cls:'bob'}) + actor('chomp','#ffb02e','COPYCATS','💾',{px:5,cls:'chomper shake'}) + actor('key','#555a66','ROTATED<br>KEYS','↻',{px:5,cls:'fade'}),
+  info(['WHAT "OPEN-SOURCED" MEANS',`The attack code was <b>published publicly</b>, like a leaked recipe. No skill needed to reuse it.`],
+       ['WHY IT MATTERS',`Reportedly targets <b>15 AI coding tools</b>. Claimed to keep access even after credentials are rotated.`],
+       ['WHAT SLIPPED THROUGH',slip([['unprev','Public toolkit invites copycats'],['unmit','Rotating passwords alone may not be enough']])]),
+  `Not a software bug (no CVEs). <b>Trust in developer workflows</b> and <b>long-lived credentials</b> were exploited.`)});
+
+/* BONUS: similar attacks */
+P.push({hud:['BONUS','MAZES'], cls:'bg-e', html:`
+  <div class="level-title">BONUS: SAME MAZE, OTHER VICTIMS<small>SIMILAR ATTACKS ON GITHUB AND PACKAGE REGISTRIES</small></div>
+  <div class="stage bg-e" style="align-items:center;justify-content:center;">
+    <ul class="list maze">
+      <li><span class="ico">🎯</span><span><b>tj-actions (Mar 2025):</b> a popular GitHub Action in 23,000+ repos leaked CI secrets. Cause: one stolen bot token.</span></li>
+      <li><span class="ico">🪱</span><span><b>Shai-Hulud (2025 to 2026):</b> self-spreading npm worm. Stolen npm tokens let it republish into every package the victim owns.</span></li>
+      <li><span class="ico">🏭</span><span><b>TanStack (11 May 2026):</b> 84 malicious artifacts in 6 minutes via the project's own trusted publisher identity.</span></li>
+      <li><span class="ico">🧩</span><span><b>GitHub itself (May 2026):</b> a poisoned VS Code extension stole tokens and SSH keys. About 3,800 internal repos were cloned.</span></li>
+      <li><span class="ico">🦈</span><span><b>Megalodon (May 2026):</b> about 5,500 repos got secret-stealing workflows via fake bot identities.</span></li>
+      <li><span class="ico">👻</span><span><b>GhostAction wave 2 (Aug to Sep 2026):</b> 772 repos, commits under the victims' own identities, secrets sent to a bare IP.</span></li>
+      <li><span class="ico">🎣</span><span><b>FakeGit (peak Apr 2026):</b> about 300 fake repos posing as MCP servers and Claude Skills, installing a stealer.</span></li>
+    </ul>
+  </div>
+  <div class="caption"><b>Why it keeps happening:</b> secrets live where developers work, one stolen token starts it, trust is inherited, and the toolkits are public.</div>`});
+
+/* THE IDENTITY THREAD */
+P.push({hud:['THE','THREAD'], cls:'bg-end', html:`
+  <div class="level-title">THE COMMON THREAD: IDENTITY<small>EVERY LEVEL WAS A STOLEN OR OVER-TRUSTED IDENTITY</small></div>
+  <div class="stage bg-end" style="align-items:center;justify-content:center;">
+    <div class="thread">
+      <div class="h"></div><div class="h">WHOSE IDENTITY</div><div class="h">THE IDENTITY QUESTION</div>
+      <div class="lv">1 COOKIE</div><div class="st">A human's login session</div><div>Is a stolen session still valid weeks later?</div>
+      <div class="lv">2 RECEIPT</div><div class="st">The build pipeline (machine identity)</div><div>Who can publish, and as whom?</div>
+      <div class="lv">3 REPO</div><div class="st">A static token with no expiry</div><div>Why did a token live that long?</div>
+      <div class="lv">4 HARVEST</div><div class="st">Cloud, npm, SSH keys (service identities)</div><div>Why were standing secrets on a laptop?</div>
+      <div class="lv">5 105 SEC</div><div class="st">Unknown: which identity, how far?</div><div>Can you see and kill it in one step?</div>
+      <div class="lv">6 PUBLIC</div><div class="st">AI tools acting as the developer</div><div>What can an agent reach on a human's behalf?</div>
+    </div>
+  </div>
+  <div class="caption">Same chain, six links: <b>who</b> is acting, <b>what</b> can they reach, and <b>how fast</b> can you stop them.</div>`});
+
+/* END */
+P.push({hud:['POWER-UPS','3/3'], cls:'bg-end', html:`
+  <div class="end-screen">
+    <div class="row">${sprite('shield','#2de2c8',{px:7,c2:'#b8f04a',cls:'bob'})}<span style="font-size:19px;color:var(--lime)">POWER PELLETS!</span>${sprite('ghost','#2de2c8',{px:7,cls:'bob'})}</div>
+    <div class="power">
+      <div><b>01 RETIRE STATIC SECRETS</b>Swap long-lived keys and tokens for short-lived, scoped, federated credentials. Less to steal, shorter window.<span>→ NOTHING STANDING TO STEAL</span></div>
+      <div><b>02 ONE IDENTITY PANE + KILL SWITCH</b>See every human, service and agent identity. Revoke one in a single step, not repo by repo.<span>→ REAL-TIME CONTAINMENT</span></div>
+      <div><b>03 BOUND WHAT AGENTS CAN REACH</b>An AI tool inherits only the human's authority, never more, and nothing that stands around.<span>→ LIMITED BLAST RADIUS</span></div>
+    </div>
+    <p style="font-size:11px;color:var(--amber);line-height:1.9;max-width:820px;margin:0;">No standing secrets. One place to pull the plug. <b style="color:var(--teal)">No pellets, no worm.</b></p>
+    <div class="blink">GAME OVER ... INSERT GUARDRAILS TO PLAY AGAIN</div>
+  </div>`});
+
+/* ---------- hidden appendix (press A) ---------- */
+const A = [];
+A.push({hud:['APPENDIX','1/2'], cls:'bg-g', html:`
+  <div class="level-title">APPENDIX<small>TECHNICAL CHECKLIST (Q&amp;A BACKUP)</small></div>
+  <div class="stage bg-g" style="align-items:center;justify-content:center;">
+    <ul class="list">
+      <li><span class="ico">🔑</span><span>Replace PATs with GitHub fine-grained tokens (approval, max lifetime) or GitHub App / OIDC tokens. Require SSO authorization on tokens.</span></li>
+      <li><span class="ico">🔏</span><span>Trusted publishing with claim pinning (<code>sub</code>, <code>ref</code>, <code>environment</code>). Alert on releases with no matching tag or CI run.</span></li>
+      <li><span class="ico">🤖</span><span>Turn off auto-run (<code>task.allowAutomaticTasks</code>), require workspace trust, review new <code>.claude/</code> <code>.gemini/</code> <code>.cursor/</code> <code>.vscode/</code> files in PRs.</span></li>
+      <li><span class="ico">🧹</span><span>If hit: isolate the host, rotate everything reachable, and check repos and workflows for persistence.</span></li>
+      <li><span class="ico">🚧</span><span>Push protection, secret scanning, branch protection, required review on workflow changes, egress restrictions, endpoint protection.</span></li>
+      <li><span class="ico">🪪</span><span>Centrally managed GitHub identities (EMU + SCIM) so one deactivation suspends the account.</span></li>
+    </ul>
+  </div>
+  <div class="caption">Identity controls shrink the blast radius and speed up response. Endpoint and repo controls are also needed. Press <b>A</b> to return.</div>`});
+
+A.push({hud:['APPENDIX','2/2'], cls:'bg-f', html:`
+  <div class="level-title">APPENDIX<small>SOURCES &amp; CAVEATS</small></div>
+  <div class="stage bg-f" style="align-items:center;justify-content:center;">
+    <ul class="list sources">
+      <li><span class="ico">📄</span><span>Miasma: StepSecurity, Phoenix Security, SafeDep, Cloud Security Alliance, Dataminr, ThreatLocker, Cloudsmith.</span></li>
+      <li><span class="ico">📄</span><span>Other attacks: CISA and Unit 42 (tj-actions), CSA and Snyk (Shai-Hulud, TanStack), Tanium and FINRA (GitHub breach), GitGuardian (GhostAction), StepSecurity (Megalodon).</span></li>
+      <li><span class="ico">⚠️</span><span>All incident facts are vendor-reported and not verified against primary sources. Sources differ on dates and counts. Attribution is moderate confidence. Whether poisoned agent config files contain prompt injection is unproven; the core mechanism is config-driven code execution.</span></li>
+      <li><span class="ico">⚠️</span><span>Where exfiltrated data went is reported as attacker-created public GitHub repos, not confirmed as a classic C2 server. "Persistence survives rotation" is a claim about the leaked toolkit.</span></li>
+      <li><span class="ico">⚠️</span><span>The identity framing is ours, not a finding in the reports. Neither victim was necessarily using any particular IdP. Do not claim a product would have prevented this.</span></li>
+    </ul>
+  </div>
+  <div class="caption">Narrative simplified for teaching. Re-check against vendor advisories before citing. Press <b>A</b> to return.</div>`});
+
+/* ---------- pager ---------- */
+const MAIN = P.length;
+const ALL = P.concat(A);
+const screen = document.getElementById('screen');
+const dotsEl = document.getElementById('dots');
+const prevBtn = document.getElementById('prev'), nextBtn = document.getElementById('next');
+const hudLabel = document.getElementById('hud-label'), hudVal = document.getElementById('hud-val');
+
+screen.innerHTML = ALL.map((p,i)=>`<div class="page ${i===0?'active':''} ${p.cls||''}">${p.html}</div>`).join('');
+dotsEl.innerHTML = P.map((_,i)=>`<div class="dot ${i===0?'active':''}" data-i="${i}"></div>`).join('');
+document.querySelectorAll('[data-s]').forEach(renderSprite);
+
+const pages = Array.from(document.querySelectorAll('.page'));
+const dots  = Array.from(document.querySelectorAll('.dot'));
+let current = 0, inApp = false, returnTo = 0;
+function show(idx){
+  const lo = inApp ? MAIN : 0, hi = inApp ? ALL.length-1 : MAIN-1;
+  current = Math.max(lo, Math.min(hi, idx));
+  pages.forEach((p,i)=>p.classList.toggle('active', i===current));
+  dots.forEach((d,i)=>d.classList.toggle('active', i===current));
+  prevBtn.disabled = current===lo;
+  nextBtn.disabled = current===hi;
+  nextBtn.textContent = inApp ? 'NEXT ▶' : (current===hi ? 'THE END' : (current===0 ? 'NEXT LEVEL ▶' : 'NEXT ▶'));
+  hudLabel.textContent = ALL[current].hud[0];
+  hudVal.textContent = ALL[current].hud[1];
+}
+function toggleAppendix(){
+  if(inApp){ inApp = false; show(returnTo); }
+  else { returnTo = current; inApp = true; show(MAIN); }
+}
+prevBtn.addEventListener('click',()=>show(current-1));
+nextBtn.addEventListener('click',()=>show(current+1));
+dots.forEach(d=>d.addEventListener('click',()=>{ inApp = false; show(+d.dataset.i); }));
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' ') {e.preventDefault();show(current+1);}
+  if(e.key==='ArrowLeft') show(current-1);
+  if(e.key==='a'||e.key==='A') toggleAppendix();
+  if(e.key==='Escape' && inApp) toggleAppendix();
+});
+
+/* scale the fixed canvas to fit any window */
+function fit(){
+  const s = Math.min(window.innerWidth/1010, window.innerHeight/770);
+  document.getElementById('fit').style.setProperty('--s', s);
+}
+window.addEventListener('resize', fit); fit();
+
+/* chomp animation */
+let open = true;
+setInterval(()=>{
+  open = !open;
+  SPRITES.chomp = open ? CHOMP_OPEN : CHOMP_SHUT;
+  document.querySelectorAll('.chomper').forEach(el=>{
+    const cells = el.children, grid = SPRITES.chomp, c1=el.dataset.c;
+    let k=0;
+    grid.forEach(row=>[...row].forEach(ch=>{
+      cells[k].style.background = ch==='0' ? 'transparent' : (ch==='2' ? '#ffffff' : c1);
+      k++;
+    }));
+  });
+}, 350);
+
+show(0);
+</script>
+</body>
+</html>
